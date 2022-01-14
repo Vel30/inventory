@@ -113,9 +113,18 @@ AddItem(player, Item: item, amount = 1, slot = -1) {
     return -1;
   }
 
+  if (!amount) {
+    return -2;
+  }
+
+  if (amount < 0) {
+    RemoveItem(player, slot, (amount = -amount));
+    return -3;
+  }
+
   if (slot != -1) {
     if (!(0 <= slot < MAX_PLAYER_ITEMS)) {
-      return -2;
+      return -4;
     }
   }
 
@@ -136,13 +145,10 @@ AddItem(player, Item: item, amount = 1, slot = -1) {
       }
 
       if (slot == -1) {
-        return -3;
+        return -5;
       }
     }
   }
-
-  // solução temporária para quantidade negativa
-  amount = clamp(amount, 1);
 
   if (PlayerItems[player][slot][ITEM_AMOUNT] + amount > Items[_: item][ITEM_MAX_STACK]) {
     amount -= Items[_: item][ITEM_MAX_STACK] - PlayerItems[player][slot][ITEM_AMOUNT];
@@ -165,8 +171,12 @@ RemoveItem(player, slot, amount = cellmax) {
     return 0;
   }
 
-  if (PlayerItems[player][slot][ITEM] == INVALID_ITEM) {
+  if (!(0 <= slot < MAX_PLAYER_ITEMS)) {
     return -1;
+  }
+
+  if (PlayerItems[player][slot][ITEM] == INVALID_ITEM) {
+    return -2;
   }
 
   if (!(PlayerItems[player][slot][ITEM_AMOUNT] = clamp((PlayerItems[player][slot][ITEM_AMOUNT] -= amount), 0))) {
@@ -281,22 +291,25 @@ CMD:daritem(playerid, params[]) {
     slot;
 
   if (sscanf(params, "rdD(1)D(-1)", player, _: item, amount, slot)) {
-    SendClientMessage(playerid, -1, "/daritem [alvo] [item] [(opcional) quantidade] [(opcional) slot]");
+    SendClientMessage(playerid, -1, "/daritem [jogador] [item] [(opcional) quantidade] [(opcional) slot]");
     return 1;
   }
 
   switch (AddItem(player, item, amount, slot)) {
     case 0: {
-      SendClientMessage(playerid, -1, "Alvo desconectado.");
+      SendClientMessage(playerid, -1, "Jogador desconectado.");
     }
     case -1: {
       SendClientMessage(playerid, -1, "Item inválido.");
     }
-    case -2: {
+    case -2, -3: {
+      SendClientMessage(playerid, -1, "Nenhum item foi adicionado.");
+    }
+    case -4: {
       SendClientMessage(playerid, -1, "Slot inválido.");
     }
-    case -3: {
-      SendClientMessage(playerid, -1, "O inventário do alvo está cheio.");
+    case -5: {
+      SendClientMessage(playerid, -1, "O inventário do jogador está cheio.");
     }
     case 1: {
       SendClientMessage(playerid, -1, "Item adicionado com sucesso!");
@@ -316,16 +329,19 @@ CMD:removeritem(playerid, params[]) {
     amount;
 
   if (sscanf(params, "rdD(-1)", player, slot, amount)) {
-    SendClientMessage(playerid, -1, "/removeritem [alvo] [slot] [(opcional) quantidade]");
+    SendClientMessage(playerid, -1, "/removeritem [jogador] [slot] [(opcional) quantidade]");
     return 1;
   }
 
   switch (RemoveItem(player, slot, amount != -1 ? amount : cellmax)) {
     case 0: {
-      SendClientMessage(playerid, -1, "Alvo desconectado.");
+      SendClientMessage(playerid, -1, "Jogador desconectado.");
     }
     case -1: {
-      SendClientMessage(playerid, -1, "O inventário do alvo não tem um item válido neste slot.");
+      SendClientMessage(playerid, -1, "Slot inválido.");
+    }
+    case -2: {
+      SendClientMessage(playerid, -1, "O inventário do jogador não tem um item válido neste slot.");
     }
     case 1: {
       SendClientMessage(playerid, -1, "Item removido com sucesso!");
@@ -343,7 +359,7 @@ CMD:limparinv(playerid, params[]) {
   new player;
 
   if (sscanf(params, "r", player)) {
-    SendClientMessage(playerid, -1, "/limparinv [alvo]");
+    SendClientMessage(playerid, -1, "/limparinv [jogador]");
     return 1;
   }
 
@@ -351,10 +367,10 @@ CMD:limparinv(playerid, params[]) {
 
   switch (ClearItems(player, count)) {
     case 0: {
-      SendClientMessage(playerid, -1, "Alvo desconectado.");
+      SendClientMessage(playerid, -1, "Jogador desconectado.");
     }
     case -1: {
-      SendClientMessage(playerid, -1, "O inventário do alvo já está vazio.");
+      SendClientMessage(playerid, -1, "O inventário do jogador já está vazio.");
     }
     case 1: {
       new str[32];
