@@ -2,114 +2,181 @@
 #include <Pawn.CMD> // https://github.com/katursis/Pawn.CMD
 #include <sscanf2> // https://github.com/maddinat0r/sscanf
 
-#define MAX_ITEMS 16
-#define MAX_PLAYER_ITEMS 10
+#define MAX_ITEMS (16)
+#define MAX_PLAYER_ITEMS (10)
+#define MAX_ITEM_NAME (32)
+#define MAX_ITEM_DESCRIPTION (128)
 
-const Item: INVALID_ITEM = Item: -1;
-const MAX_ITEM_NAME = 32;
+const Item: INVALID_ITEM_ID = Item: -1;
+// const MAX_ITEM_NAME = 32;
+// const MAX_ITEM_DESCRIPTION = 128;
 
-enum E_ITEMS {
-  ITEM_MODEL,
-  ITEM_NAME[MAX_ITEM_NAME + 1 char],
-  ITEM_COLOR,
-  ITEM_MAX_STACK
+enum E_ITEM_DATA {
+  E_ITEM_DATA_MODEL,
+  E_ITEM_DATA_NAME[MAX_ITEM_NAME + 1 char],
+  E_ITEM_DATA_COLOR,
+  E_ITEM_DATA_MAX_STACK,
+  E_ITEM_DATA_DESCRIPTION[MAX_ITEM_DESCRIPTION + 1 char]
 };
 
-static Items[MAX_ITEMS][E_ITEMS];
+static gItemData[MAX_ITEMS][E_ITEM_DATA];
 
-new ItemPoolSize;
+new gItemPoolSize;
 
-enum E_PLAYER_ITEMS {
-  Item: ITEM,
-  ITEM_AMOUNT
+enum E_PLAYER_ITEM_DATA {
+  Item: E_PLAYER_ITEM_DATA_ITEM_ID,
+  E_PLAYER_ITEM_DATA_ITEM_AMOUNT
 };
 
-static PlayerItems[MAX_PLAYERS][MAX_PLAYER_ITEMS][E_PLAYER_ITEMS];
+static gPlayerItemData[MAX_PLAYERS][MAX_PLAYER_ITEMS][E_PLAYER_ITEM_DATA],
+  gPlayerSelectedItemSlot[MAX_PLAYERS] = { -1, ... };
 
-forward Item: DefineItem(model, const name[], color = -1, max_stack = cellmax);
-forward bool: IsValidItem(Item: item);
+forward Item: Item_Define(model, const name[], color = -1, maxStack = cellmax, const description[] = "");
+forward bool: Item_IsValid(Item: item);
+forward bool: Item_IsStackable(Item: item);
 
 forward OnPlayerUseItem(playerid, Item: item);
 
-stock Item: Burger = INVALID_ITEM,
-  Item: Soda = INVALID_ITEM;
+stock Item: gBurger = INVALID_ITEM_ID,
+  Item: gSoda = INVALID_ITEM_ID;
 
 public OnFilterScriptInit() {
-  Burger = DefineItem(2880, "Hambúrguer", 0xF39C62FF, 5);
-  Soda = DefineItem(2601, "Refrigerante", 0xEE593EFF, 1);
+  gBurger = Item_Define(2880, "Hambúrguer", 0xF39C62FF, 5);
+  gSoda = Item_Define(2601, "Refrigerante", 0xEE593EFF, 1);
 }
 
 public OnPlayerConnect(playerid) {
-  ClearItems(playerid);
+  PlayerItems_Clear(playerid);
 
-  LoadItems(playerid);
+  gPlayerSelectedItemSlot[playerid] = -1;
+
+  PlayerItems_Load(playerid);
   return 1;
 }
 
 public OnPlayerDisconnect(playerid, reason) {
-  SaveItems(playerid);
+  PlayerItems_Save(playerid);
   return 1;
 }
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[]) {
-  if (dialogid == 4510 && response) {
-    if (!UseItem(playerid, listitem)) {
-      ShowPlayerItems(playerid);
+  switch (dialogid) {
+    case 4510: {
+      if (!response) {
+        return 1;
+      }
+
+      new Item: item = gPlayerItemData[playerid][listitem][E_PLAYER_ITEM_DATA_ITEM_ID];
+
+      if (!Item_IsValid(item)) {
+        PlayerItems_Show(playerid);
+        return 1;
+      }
+
+      gPlayerSelectedItemSlot[playerid] = listitem;
+
+      ShowPlayerDialog(playerid, 4511, DIALOG_STYLE_LIST, Item_GetName(item), "Usar\nVer detalhes", "Selecionar", "Voltar");
+      return 1;
     }
-    return 1;
+    case 4511: {
+      if (!response) {
+        gPlayerSelectedItemSlot[playerid] = -1;
+
+        PlayerItems_Show(playerid);
+        return 1;
+      }
+
+      new slot = gPlayerSelectedItemSlot[playerid];
+
+      if (slot == -1) {
+        PlayerItems_Show(playerid);
+        return 1;
+      }
+
+      switch (listitem) {
+        case 0: {
+          if (!PlayerItem_Use(playerid, slot)) {
+            PlayerItems_Show(playerid);
+          } else {
+            // 
+          }
+
+          gPlayerSelectedItemSlot[playerid] = -1;
+          return 1;
+        }
+        case 1: {
+          return 1;
+        }
+      }
+      return 1;
+    }
   }
   return 0;
 }
 
 public OnPlayerKeyStateChange(playerid, newkeys, oldkeys) {
   if (newkeys & KEY_YES) {
-    ShowPlayerItems(playerid);
+    PlayerItems_Show(playerid);
   }
 }
 
 public OnPlayerUseItem(playerid, Item: item) {
   new str[(MAX_ITEM_NAME + 1) + 8];
 
-  format(str, sizeof(str), "{%06x}%s{FFFFFF} usado.", GetItemColor(item) >>> 8, GetItemName(item));
+  format(str, sizeof(str), "{%06x}%s{FFFFFF} usado.", Item_GetColor(item) >>> 8, Item_GetName(item));
   SendClientMessage(playerid, -1, str);
   return 1;
 }
 
-Item: DefineItem(model, const name[], color = -1, max_stack = cellmax) {
-  if (ItemPoolSize == MAX_ITEMS) {
-    return INVALID_ITEM;
+Item: Item_Define(model, const name[], color = -1, maxStack = cellmax, const description[] = "") {
+  if (gItemPoolSize == MAX_ITEMS) {
+    return INVALID_ITEM_ID;
   }
 
-  Items[ItemPoolSize][ITEM_MODEL] = model;
-  strpack(Items[ItemPoolSize][ITEM_NAME], name, MAX_ITEM_NAME + 1 char);
-  Items[ItemPoolSize][ITEM_COLOR] = color;
-  Items[ItemPoolSize][ITEM_MAX_STACK] = max_stack;
-  return Item: ItemPoolSize++;
+  gItemData[gItemPoolSize][E_ITEM_DATA_MODEL] = model;
+  strpack(gItemData[gItemPoolSize][E_ITEM_DATA_NAME], name, MAX_ITEM_NAME + 1 char);
+  gItemData[gItemPoolSize][E_ITEM_DATA_COLOR] = color;
+  gItemData[gItemPoolSize][E_ITEM_DATA_MAX_STACK] = maxStack;
+  strpack(gItemData[gItemPoolSize][E_ITEM_DATA_DESCRIPTION], description, MAX_ITEM_DESCRIPTION + 1 char);
+  return Item: gItemPoolSize++;
 }
 
-bool: IsValidItem(Item: item) {
-  return 0 <= _: item < ItemPoolSize;
+bool: Item_IsValid(Item: item) {
+  return 0 <= _: item < gItemPoolSize;
 }
 
-GetItemName(Item: item) {
+Item_GetName(Item: item) {
   new name[MAX_ITEM_NAME + 1];
 
-  if (IsValidItem(item)) {
-    strunpack(name, Items[_: item][ITEM_NAME]);
+  if (Item_IsValid(item)) {
+    strunpack(name, gItemData[_: item][E_ITEM_DATA_NAME]);
   }
   return name;
 }
 
-GetItemColor(Item: item) {
-  return !IsValidItem(item) ? -1 : Items[_: item][ITEM_COLOR];
+Item_GetColor(Item: item) {
+  return !Item_IsValid(item) ? -1 : gItemData[_: item][E_ITEM_DATA_COLOR];
 }
 
-AddItem(player, Item: item, amount = 1, slot = -1) {
-  if (!IsPlayerConnected(player)) {
+Item_GetDescription(Item: item) {
+  new description[MAX_ITEM_DESCRIPTION + 1];
+
+  if (Item_IsValid(item)) {
+    strunpack(description, gItemData[_: item][E_ITEM_DATA_DESCRIPTION]);
+  }
+  return description;
+}
+
+bool: Item_IsStackable(Item: item) {
+  return Item_IsValid(item) && !!gItemData[_: item][E_ITEM_DATA_MAX_STACK];
+}
+
+PlayerItem_Add(playerid, Item: item, amount = 1, slot = -1) {
+  if (!IsPlayerConnected(playerid)) {
     return 0;
   }
 
-  if (!IsValidItem(item)) {
+  if (!Item_IsValid(item)) {
     return -1;
   }
 
@@ -118,7 +185,7 @@ AddItem(player, Item: item, amount = 1, slot = -1) {
   }
 
   if (amount < 0) {
-    RemoveItem(player, slot, (amount = -amount));
+    PlayerItem_Remove(playerid, slot, (amount = -amount));
     return -3;
   }
 
@@ -130,7 +197,7 @@ AddItem(player, Item: item, amount = 1, slot = -1) {
 
   if (slot == -1) {
     for (new i; i < MAX_PLAYER_ITEMS; i++) {
-      if (PlayerItems[player][i][ITEM] == item && PlayerItems[player][i][ITEM_AMOUNT] < Items[_: item][ITEM_MAX_STACK]) {
+      if (gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID] == item && gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] < gItemData[_: item][E_ITEM_DATA_MAX_STACK]) {
         slot = i;
         break;
       }
@@ -138,7 +205,7 @@ AddItem(player, Item: item, amount = 1, slot = -1) {
 
     if (slot == -1) {
       for (new i; i < MAX_PLAYER_ITEMS; i++) {
-        if (PlayerItems[player][i][ITEM] == INVALID_ITEM) {
+        if (gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID] == INVALID_ITEM_ID) {
           slot = i;
           break;
         }
@@ -150,24 +217,24 @@ AddItem(player, Item: item, amount = 1, slot = -1) {
     }
   }
 
-  if (PlayerItems[player][slot][ITEM_AMOUNT] + amount > Items[_: item][ITEM_MAX_STACK]) {
-    amount -= Items[_: item][ITEM_MAX_STACK] - PlayerItems[player][slot][ITEM_AMOUNT];
+  if (gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] + amount > gItemData[_: item][E_ITEM_DATA_MAX_STACK]) {
+    amount -= gItemData[_: item][E_ITEM_DATA_MAX_STACK] - gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_AMOUNT];
 
-    PlayerItems[player][slot][ITEM] = item;
-    PlayerItems[player][slot][ITEM_AMOUNT] = Items[_: item][ITEM_MAX_STACK];
+    gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_ID] = item;
+    gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] = gItemData[_: item][E_ITEM_DATA_MAX_STACK];
 
     if (amount) {
-      AddItem(player, item, amount);
+      PlayerItem_Add(playerid, item, amount);
     }
   } else {
-    PlayerItems[player][slot][ITEM] = item;
-    PlayerItems[player][slot][ITEM_AMOUNT] += amount;
+    gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_ID] = item;
+    gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] += amount;
   }
   return 1;
 }
 
-RemoveItem(player, slot, amount = cellmax) {
-  if (!IsPlayerConnected(player)) {
+PlayerItem_Remove(playerid, slot, amount = cellmax) {
+  if (!IsPlayerConnected(playerid)) {
     return 0;
   }
 
@@ -175,27 +242,27 @@ RemoveItem(player, slot, amount = cellmax) {
     return -1;
   }
 
-  if (PlayerItems[player][slot][ITEM] == INVALID_ITEM) {
+  if (gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_ID] == INVALID_ITEM_ID) {
     return -2;
   }
 
-  if (!(PlayerItems[player][slot][ITEM_AMOUNT] = clamp((PlayerItems[player][slot][ITEM_AMOUNT] -= amount), 0))) {
-    PlayerItems[player][slot][ITEM] = INVALID_ITEM;
+  if (!(gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] = clamp((gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] -= amount), 0))) {
+    gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_ID] = INVALID_ITEM_ID;
   }
   return 1;
 }
 
-ClearItems(player, &count = 0) {
-  if (!IsPlayerConnected(player)) {
+PlayerItems_Clear(playerid, &count = 0) {
+  if (!IsPlayerConnected(playerid)) {
     return 0;
   }
 
   for (new i; i < MAX_PLAYER_ITEMS; i++) {
-    if (PlayerItems[player][i][ITEM] != INVALID_ITEM) {
-      count += PlayerItems[player][i][ITEM_AMOUNT];
+    if (gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID] != INVALID_ITEM_ID) {
+      count += gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_AMOUNT];
 
-      PlayerItems[player][i][ITEM] = INVALID_ITEM;
-      PlayerItems[player][i][ITEM_AMOUNT] = 0;
+      gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID] = INVALID_ITEM_ID;
+      gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] = 0;
     }
   }
 
@@ -205,41 +272,41 @@ ClearItems(player, &count = 0) {
   return 1;
 }
 
-UseItem(player, slot) {
-  new Item: item = PlayerItems[player][slot][ITEM];
+PlayerItem_Use(playerid, slot) {
+  new Item: item = gPlayerItemData[playerid][slot][E_PLAYER_ITEM_DATA_ITEM_ID];
 
-  if (!IsValidItem(item)) {
+  if (!Item_IsValid(item)) {
     return 0;
   }
 
-  if (RemoveItem(player, slot, 1)) {
-    if (!OnPlayerUseItem(player, item)) {
+  if (PlayerItem_Remove(playerid, slot, 1)) {
+    if (!OnPlayerUseItem(playerid, item)) {
       return -1;
     }
   }
   return 1;
 }
 
-ShowPlayerItems(player) {
-  if (!IsPlayerConnected(player)) {
+PlayerItems_Show(playerid) {
+  if (!IsPlayerConnected(playerid)) {
     return 0;
   }
 
-  new list[(MAX_ITEM_NAME + 1) * MAX_PLAYER_ITEMS] = "# Nome\tQtd";
+  new list[(MAX_ITEM_NAME + 1) * MAX_PLAYER_ITEMS] = "# Item\tQuantidade";
 
   for (new i; i < MAX_PLAYER_ITEMS; i++) {
-    format(list, sizeof(list), "%s\n%02d {%06x}%s\t%d", list, i + 1, GetItemColor(PlayerItems[player][i][ITEM]) >>> 8, PlayerItems[player][i][ITEM] != INVALID_ITEM ? GetItemName(PlayerItems[player][i][ITEM]) : "--", PlayerItems[player][i][ITEM] != INVALID_ITEM ? PlayerItems[player][i][ITEM_AMOUNT] : cellmax + 1);
+    format(list, sizeof(list), "%s\n%02d {%06x}%s\t%d", list, i + 1, Item_GetColor(gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID]) >>> 8, gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID] != INVALID_ITEM_ID ? Item_GetName(gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID]) : "--", gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID] != INVALID_ITEM_ID ? gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_AMOUNT] : cellmax + 1);
   }
 
-  ShowPlayerDialog(player, 4510, DIALOG_STYLE_TABLIST_HEADERS, "Seu Inventário", list, "Usar", "Fechar");
+  ShowPlayerDialog(playerid, 4510, DIALOG_STYLE_TABLIST_HEADERS, "Seu Inventário", list, "Usar", "Fechar");
   return 1;
 }
 
-SaveItems(player) {
+PlayerItems_Save(playerid) {
   new path[(MAX_PLAYER_NAME + 1) + 5], 
     name[MAX_PLAYER_NAME + 1];
 
-  GetPlayerName(player, name, MAX_PLAYER_NAME + 1);
+  GetPlayerName(playerid, name, MAX_PLAYER_NAME + 1);
 
   format(path, sizeof(path), "%s.ini", name);
 
@@ -249,7 +316,7 @@ SaveItems(player) {
     new buffer[32];
 
     for (new i; i < MAX_PLAYER_ITEMS; i++) {
-      format(buffer, sizeof(buffer), "%d, %d\r\n", _: PlayerItems[player][i][ITEM], PlayerItems[player][i][ITEM_AMOUNT]);
+      format(buffer, sizeof(buffer), "%d, %d\r\n", _: gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_ID], gPlayerItemData[playerid][i][E_PLAYER_ITEM_DATA_ITEM_AMOUNT]);
 
       fwrite(file, buffer);
     }
@@ -258,11 +325,11 @@ SaveItems(player) {
   }
 }
 
-LoadItems(player, &count = 0) {
+PlayerItems_Load(playerid, &count = 0) {
   new path[(MAX_PLAYER_NAME + 1) + 5], 
     name[MAX_PLAYER_NAME + 1];
 
-  GetPlayerName(player, name, MAX_PLAYER_NAME + 1);
+  GetPlayerName(playerid, name, MAX_PLAYER_NAME + 1);
 
   format(path, sizeof(path), "%s.ini", name);
 
@@ -272,7 +339,7 @@ LoadItems(player, &count = 0) {
     new buffer[32 * (MAX_PLAYER_ITEMS + 1)];
 
     while (fread(file, buffer)) {
-      sscanf(buffer, "p<,>e<dd>", PlayerItems[player][count++]);
+      sscanf(buffer, "p<,>e<dd>", gPlayerItemData[playerid][count++]);
     }
 
     fclose(file);
@@ -295,7 +362,7 @@ CMD:daritem(playerid, params[]) {
     return 1;
   }
 
-  switch (AddItem(player, item, amount, slot)) {
+  switch (PlayerItem_Add(player, item, amount, slot)) {
     case 0: {
       SendClientMessage(playerid, -1, "Jogador desconectado.");
     }
@@ -333,7 +400,7 @@ CMD:removeritem(playerid, params[]) {
     return 1;
   }
 
-  switch (RemoveItem(player, slot, amount != -1 ? amount : cellmax)) {
+  switch (PlayerItem_Remove(player, slot, amount != -1 ? amount : cellmax)) {
     case 0: {
       SendClientMessage(playerid, -1, "Jogador desconectado.");
     }
@@ -365,7 +432,7 @@ CMD:limparinv(playerid, params[]) {
 
   new count;
 
-  switch (ClearItems(player, count)) {
+  switch (PlayerItems_Clear(player, count)) {
     case 0: {
       SendClientMessage(playerid, -1, "Jogador desconectado.");
     }
