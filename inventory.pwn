@@ -168,7 +168,7 @@ Item_GetDescription(Item: item) {
 }
 
 bool: Item_IsStackable(Item: item) {
-  return Item_IsValid(item) && !!gItemData[_: item][E_ITEM_DATA_MAX_STACK];
+  return Item_IsValid(item) && gItemData[_: item][E_ITEM_DATA_MAX_STACK] > 1;
 }
 
 PlayerItem_Add(playerid, Item: item, amount = 1, slot = -1) {
